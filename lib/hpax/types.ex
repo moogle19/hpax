@@ -37,8 +37,7 @@ defmodule HPAX.Types do
 
   @spec encode_binary(binary(), boolean()) :: iodata()
   def encode_binary(binary, huffman?) do
-    binary = if huffman?, do: Huffman.encode(binary), else: binary
-    huffman_bit = if huffman?, do: 1, else: 0
+    {binary, huffman_bit} = if huffman?, do: {Huffman.encode(binary), 1}, else: {binary, 0}
     binary_size = encode_integer(byte_size(binary), 7)
     [<<huffman_bit::1, binary_size::bitstring>>, binary]
   end

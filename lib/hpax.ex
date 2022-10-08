@@ -120,6 +120,7 @@ defmodule HPAX do
   end
 
   ## Helpers
+  @compile {:inline, decode_headers: 3, decode_header: 3, decode_binary: 1, decode_integer: 2}
 
   defp decode_headers(<<>>, table, acc) do
     {:ok, Enum.reverse(acc), table}
@@ -135,68 +136,42 @@ defmodule HPAX do
   # Literal header field with incremental indexing
   # http://httpwg.org/specs/rfc7541.html#rfc.section.6.2.1
   defp decode_headers(<<0b01::2, rest::bitstring>>, table, acc) do
-    {name, value, rest} =
-      case rest do
-        # The header name is a string.
-        <<0::6, rest::binary>> ->
-          {name, rest} = decode_binary(rest)
-          {value, rest} = decode_binary(rest)
-          {name, value, rest}
-
-        # The header name is an index to be looked up in the table.
-        _other ->
-          {index, rest} = decode_integer(rest, 6)
-          {value, rest} = decode_binary(rest)
-          {name, _value} = lookup_by_index!(table, index)
-          {name, value, rest}
-      end
-
+    {name, value, rest} = decode_header(rest, 6, table)
     decode_headers(rest, Table.add(table, name, value), [{name, value} | acc])
   end
 
   # Literal header field without indexing
   # http://httpwg.org/specs/rfc7541.html#rfc.section.6.2.2
   defp decode_headers(<<0b0000::4, rest::bitstring>>, table, acc) do
-    {name, value, rest} =
-      case rest do
-        <<0::4, rest::binary>> ->
-          {name, rest} = decode_binary(rest)
-          {value, rest} = decode_binary(rest)
-          {name, value, rest}
-
-        _other ->
-          {index, rest} = decode_integer(rest, 4)
-          {value, rest} = decode_binary(rest)
-          {name, _value} = lookup_by_index!(table, index)
-          {name, value, rest}
-      end
-
+    {name, value, rest} = decode_header(rest, 4, table)
     decode_headers(rest, table, [{name, value} | acc])
   end
 
   # Literal header field never indexed
   # http://httpwg.org/specs/rfc7541.html#rfc.section.6.2.3
   defp decode_headers(<<0b0001::4, rest::bitstring>>, table, acc) do
-    {name, value, rest} =
-      case rest do
-        <<0::4, rest::binary>> ->
-          {name, rest} = decode_binary(rest)
-          {value, rest} = decode_binary(rest)
-          {name, value, rest}
-
-        _other ->
-          {index, rest} = decode_integer(rest, 4)
-          {value, rest} = decode_binary(rest)
-          {name, _value} = lookup_by_index!(table, index)
-          {name, value, rest}
-      end
-
+    {name, value, rest} = decode_header(rest, 4, table)
     # TODO: enforce the "never indexed" part somehow.
     decode_headers(rest, table, [{name, value} | acc])
   end
 
   defp decode_headers(_other, _table, _acc) do
     throw({:hpax, :protocol_error})
+  end
+
+  defp decode_header(data, size, table) do
+    case data do
+      <<0::size(size), rest::binary>> ->
+        {name, rest} = decode_binary(rest)
+        {value, rest} = decode_binary(rest)
+        {name, value, rest}
+
+      _other ->
+        {index, rest} = decode_integer(data, size)
+        {value, rest} = decode_binary(rest)
+        {name, _value} = lookup_by_index!(table, index)
+        {name, value, rest}
+    end
   end
 
   defp lookup_by_index!(table, index) do
